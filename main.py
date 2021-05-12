@@ -1,9 +1,9 @@
 
 import numpy as np
 import torch
-from collections import deque,namedtuple
+from collections import deque
 import matplotlib.pyplot as plt
-from Agent import DDPGAgent
+from Agent import TD3Agent
 from unityagents import UnityEnvironment
 
 env = UnityEnvironment(file_name='Reacher_Linux/Reacher.x86_64')
@@ -26,9 +26,9 @@ state_size = states.shape[1]
 print('There are {} agents. Each observes a state with length: {}'.format(states.shape[0], state_size))
 
 
-agent_ddpg = DDPGAgent(state_size, action_size)
+agent_TD3 = TD3Agent(state_size, action_size)
 
-def ddpg(agent, n_episodes=300, max_t=1000, update_every=3, batch_size=50, policy_noise=0.2):
+def TD3(agent, n_episodes=300, max_t=1000, update_every=3, batch_size=50, policy_noise=0.2):
     step = 0
     scores = []
     scores_window = deque(maxlen=100)
@@ -61,10 +61,10 @@ def ddpg(agent, n_episodes=300, max_t=1000, update_every=3, batch_size=50, polic
         # if i % 100 == 0:
         #     print('\rEpisode {}\tAverage Score: {:.2f}'.format(i, np.mean(scores_window)))
 
-    #torch.save(agent.actor.state_dict(),'checkpoint_actor.pth')
+    torch.save(agent.actor.state_dict(), 'checkpoint_actor.pth')
     return scores
 
-scores = ddpg(agent_ddpg)
+scores = TD3(agent_TD3)
 
 # plot the scores
 fig = plt.figure()

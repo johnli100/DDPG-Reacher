@@ -12,7 +12,7 @@ LR = 0.0005
 
 Transition = namedtuple('Transition',('state','action','reward','state_next','done'))
 
-class DDPGAgent():
+class TD3Agent():
 
     def __init__(self, state_dim=37, action_dim=4):
         #self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -43,7 +43,7 @@ class DDPGAgent():
 
     def recall(self, batch_size):
         transitions = random.sample(self.memory, batch_size)
-        states,actions, rewards, states_next, dones = map(torch.stack, zip(*transitions))
+        states, actions, rewards, states_next, dones = map(torch.stack, zip(*transitions))
         return (states, actions, rewards, states_next, dones)
 
     def act(self, state, policy_noise):
@@ -56,16 +56,17 @@ class DDPGAgent():
     def learn(self, transitions):
         states, actions, rewards, states_next, dones = transitions
         # learn Value function (critic)
-        Qs = self.critic(states,actions)
+        Qs_1, Qs_2 = self.critic(states, actions)
         actions_next = self.actor_target(states_next)
-        Qs_target = self.critic_target(states_next, actions_next).data * GAMMA * (1-dones) + rewards
-        loss_critic = nn.functional.mse_loss(Qs, Qs_target)
+        Qs_1_target, Qs_2_target = self.critic_target(states_next, actions_next)
+        Qs_target = torch.min(Qs_1_target.data, Qs_2_target.data) * GAMMA * (1-dones) + rewards
+        loss_critic = nn.functional.mse_loss(Qs_1, Qs_target) + nn.functional.mse_loss(Qs_2, Qs_target)
         self.critic_optimizer.zero_grad()
         loss_critic.backward()
         self.critic_optimizer.step()
 
         # learn (optimized continuous) policy function (actor)
-        loss_actor = -self.critic(states,self.actor(states)).mean()
+        loss_actor = -self.critic(states, self.actor(states))[0].mean()
         self.actor_optimizer.zero_grad()
         loss_actor.backward()
         self.actor_optimizer.step()
@@ -82,7 +83,7 @@ class DDPGAgent():
 
 
 class Network_Actor(nn.Module):
-    def __init__(self, state_dim, action_dim, hidden_dims=[400,300]):
+    def __init__(self, state_dim, action_dim, hidden_dims=[400, 300]):
         super().__init__()
         hidden_dims = [state_dim] + hidden_dims
         self.layers = nn.ModuleList([nn.Linear(hidden_dims[i],hidden_dims[i+1]) \
@@ -99,17 +100,26 @@ class Network_Actor(nn.Module):
         return self.tanh(self.layer_output(x))
 
 class Network_Critic(nn.Module):
-    def __init__(self,state_dim,action_dim,hidden_dims=[400,300]):
+    def __init__(self,state_dim, action_dim, hidden_dims = [400, 300]):
         super().__init__()
         hidden_dims = [state_dim+action_dim] + hidden_dims
-        self.layers = nn.ModuleList([nn.Linear(hidden_dims[i], hidden_dims[i + 1]) \
+        self.layers_1 = nn.ModuleList([nn.Linear(hidden_dims[i], hidden_dims[i + 1]) \
                                       for i in range(len(hidden_dims)-1)])
-        self.layer_output = nn.Linear(hidden_dims[-1], 1)
-        self.relu = nn.ReLU()
+        self.layer_output_1 = nn.Linear(hidden_dims[-1], 1)
+
+        self.layers_2 = nn.ModuleList([nn.Linear(hidden_dims[i], hidden_dims[i + 1]) \
+                                       for i in range(len(hidden_dims) - 1)])
+        self.layer_output_2 = nn.Linear(hidden_dims[-1], 1)
 
     def forward(self, state, action):
-        x = torch.cat([state, action],dim=1)
-        for layer in self.layers:
-            x = layer(x)
-            x = self.relu(x)
-        return self.layer_output(x)
+        x1 = x2 = torch.cat([state, action], dim=1)
+
+        for layer in self.layers_1:
+            x1 = layer(x1)
+            x1 = nn.functional.relu(x1)
+
+        for layer in self.layers_2:
+            x2 = layer(x2)
+            x2 = nn.functional.relu(x2)
+
+        return self.layer_output_1(x1), self.layer_output_2(x2)
